@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Resume Matcher – Smart CV Screening</title>
+    <!-- Google Fonts + Font Awesome (modern icons) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-icon">
+                <i class="fas fa-file-alt"></i>
+            </div>
+            <h1>Resume Matcher</h1>
+            <p>Upload a folder of CVs, paste a job description, and get AI‑powered relevance scores.</p>
+        </header>
+
+        <div class="form-section card">
+            <form method="post" enctype="multipart/form-data" id="uploadForm">
+                <div class="form-group">
+                    <label for="folder_input"><i class="fas fa-folder-open"></i> Select Folder</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="folder_input" name="folder" webkitdirectory directory multiple>
+                        <span class="file-input-button">Choose Folder</span>
+                        <span class="file-input-name">No folder selected</span>
+                    </div>
+                    <small>Supports PDF, DOCX, TXT, JSONL files</small>
+                </div>
+                <div class="form-group">
+                    <label for="job_description"><i class="fas fa-briefcase"></i> Job Description</label>
+                    <textarea id="job_description" name="job_description" rows="6" placeholder="Paste the full job description here...">{{ job_description }}</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="top_k"><i class="fas fa-chart-line"></i> Number of top results</label>
+                    <input type="number" id="top_k" name="top_k" min="1" max="50" value="{{ top_k }}">
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search"></i> Match Resumes
+                </button>
+            </form>
+            <div id="loading" class="loading-spinner" style="display:none;">
+                <i class="fas fa-spinner fa-pulse"></i> Processing folder... please wait.
+            </div>
+        </div>
+
+        {% if error %}
+        <div class="error alert">
+            <i class="fas fa-exclamation-triangle"></i> {{ error }}
+        </div>
+        {% endif %}
+
+        {% if results %}
+        <div class="results-section">
+            <h2><i class="fas fa-trophy"></i> Top {{ results|length }} Matches</h2>
+            <div class="results-list">
+                {% for res in results %}
+                <div class="result-card card">
+                    <div class="card-header">
+                        <span class="rank">#{{ loop.index }}</span>
+                        <span class="name"><i class="fas fa-file-pdf"></i> {{ res.file_name }}</span>
+                        <span class="score"><i class="fas fa-chart-simple"></i> {{ res.score }}</span>
+                    </div>
+                    <div class="summary">{{ res.text_preview }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="history-section card">
+            <h2><i class="fas fa-clock"></i> Recent Queries</h2>
+            {% if recent_queries %}
+                {% for q in recent_queries %}
+                <div class="history-item" onclick="loadQuery({{ q.job_description|tojson }}, {{ q.top_k }})">
+                    <div class="history-date"><i class="far fa-calendar-alt"></i> {{ q.timestamp[:19] }}</div>
+                    <div class="history-desc"><i class="fas fa-align-left"></i> {{ q.job_description[:120] }}{% if q.job_description|length > 120 %}...{% endif %}</div>
+                    <div class="history-results"><i class="fas fa-chart-line"></i> {{ q.top_k }} results</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="empty-state"><i class="fas fa-database"></i> No past queries yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // Update the file input text (no logic change, just UI enhancement)
+        const folderInput = document.getElementById('folder_input');
+        const fileNameSpan = document.querySelector('.file-input-name');
+        if (folderInput && fileNameSpan) {
+            folderInput.addEventListener('change', function(e) {
+                if (this.files && this.files.length) {
+                    let totalFiles = this.files.length;
+                    fileNameSpan.textContent = `${totalFiles} file(s) selected`;
+                } else {
+                    fileNameSpan.textContent = 'No folder selected';
+                }
+            });
+        }
+
+        // Original logic (unchanged)
+        document.getElementById('uploadForm').addEventListener('submit', function() {
+            document.getElementById('loading').style.display = 'flex';
+        });
+
+        function loadQuery(jobDesc, topK) {
+            document.getElementById('job_description').value = jobDesc;
+            document.getElementById('top_k').value = topK;
+            // Optionally auto-submit (commented to keep same behaviour)
+            // document.getElementById('uploadForm').submit();
+        }
+    </script>
+</body>
+</html>
