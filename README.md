@@ -25,17 +25,19 @@ A web application that helps recruiters find the most relevant candidates for a 
    ```bash
    pip install -r requirements.txt
 
-   resume_matcher/
-├── app.py                 # Flask web server
-├── resume_matcher.py      # Text extraction and ranking logic
-├── templates/
-│   └── index.html         # Web page template
-├── static/
-│   └── style.css          # Styling for the web page
-├── temp_uploads/          # Temporary folder for uploaded files (auto‑created)
-├── resume_matches.db      # SQLite database (auto‑created)
-└── requirements.txt       # Python dependencies
-
+## Folder Structure
+```
+resume_matcher/
+   ├── app.py                 # Flask web server
+   ├── resume_matcher.py      # Text extraction and ranking logic
+   ├── templates/
+   │   └── index.html         # Web page template
+   ├── static/
+   │   └── style.css          # Styling for the web page
+   ├── temp_uploads/          # Temporary folder for uploaded files (auto‑created)
+   ├── resume_matches.db      # SQLite database (auto‑created)
+   └── requirements.txt       # Python dependencies
+```
 ## To run this Flask project
 1. run the app.py file
 2. search http://127.0.0.1:5000 in your browser to acess the running project
