@@ -2,21 +2,62 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Resume Matcher – Smart CV Screening</title>
-    <!-- Google Fonts + Font Awesome -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Guaranteed modal styles (inline to avoid override) */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 999999;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: white;
+            width: 90%;
+            max-width: 800px;
+            max-height: 85vh;
+            overflow-y: auto;
+            border-radius: 28px;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.2);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .close-modal {
+            font-size: 2rem;
+            cursor: pointer;
+            line-height: 1;
+            color: #64748b;
+        }
+        .modal-body {
+            padding: 1.5rem;
+        }
+        .loading-spinner {
+            text-align: center;
+            padding: 2rem;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <div class="header-icon">
-                <i class="fas fa-file-alt"></i>
-            </div>
+            <div class="header-icon"><i class="fas fa-file-alt"></i></div>
             <h1>Resume Matcher</h1>
-            <p>Upload a folder of CVs, paste a job description, and get AI‑powered relevance scores.</p>
+            <p>Select a folder with CVs, paste a job description, and get AI‑powered relevance scores.</p>
         </header>
 
         <div class="form-section card">
@@ -38,19 +79,13 @@
                     <label for="top_k"><i class="fas fa-chart-line"></i> Number of top results</label>
                     <input type="number" id="top_k" name="top_k" min="1" max="50" value="{{ top_k }}">
                 </div>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-search"></i> Match Resumes
-                </button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Match Resumes</button>
             </form>
-            <div id="loading" class="loading-spinner" style="display:none;">
-                <i class="fas fa-spinner fa-pulse"></i> Processing folder... please wait.
-            </div>
+            <div id="loading" class="loading-spinner" style="display:none;"><i class="fas fa-spinner fa-pulse"></i> Processing folder... please wait.</div>
         </div>
 
         {% if error %}
-        <div class="error alert">
-            <i class="fas fa-exclamation-triangle"></i> {{ error }}
-        </div>
+        <div class="error alert"><i class="fas fa-exclamation-triangle"></i> {{ error }}</div>
         {% endif %}
 
         {% if results %}
@@ -62,7 +97,7 @@
                     <div class="card-header">
                         <span class="rank">#{{ loop.index }}</span>
                         <span class="name"><i class="fas fa-file-pdf"></i> {{ res.file_name }}</span>
-                        <span class="score"><i class="fas fa-chart-simple"></i> {{ res.score }}</span>
+                        <span class="score"><i class="fas fa-chart-simple"></i> {{ res.score }}%</span>
                     </div>
                     <div class="summary">{{ res.text_preview }}</div>
                 </div>
@@ -75,8 +110,7 @@
             <h2><i class="fas fa-clock"></i> Recent Queries</h2>
             {% if recent_queries %}
                 {% for q in recent_queries %}
-                <div class="history-item" tabindex="0" role="button"
-                     data-job-desc="{{ q.job_description|tojson }}" data-top-k="{{ q.top_k }}">
+                <div class="history-item" tabindex="0" role="button" data-query-id="{{ q.id }}">
                     <div class="history-date"><i class="far fa-calendar-alt"></i> {{ q.timestamp[:19] }}</div>
                     <div class="history-desc"><i class="fas fa-align-left"></i> {{ q.job_description[:120] }}{% if q.job_description|length > 120 %}...{% endif %}</div>
                     <div class="history-results"><i class="fas fa-chart-line"></i> {{ q.top_k }} results</div>
@@ -88,73 +122,116 @@
         </div>
     </div>
 
+    <!-- Modal for past results -->
+    <div id="resultsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-history"></i> Past Results</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body" id="modalResultsBody">
+                <div class="loading-spinner"><i class="fas fa-spinner fa-pulse"></i> Loading...</div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // 1. Folder input: update displayed file count
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                return m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;';
+            });
+        }
+
+        function showPastResults(queryId) {
+            const modal = document.getElementById('resultsModal');
+            const modalBody = document.getElementById('modalResultsBody');
+            if (!modal) return;
+            modalBody.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-pulse"></i> Loading results...</div>';
+            modal.style.display = 'flex';
+
+            fetch(`/api/query/${queryId}`)
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        modalBody.innerHTML = `<p>Error: ${escapeHtml(data.error)}</p>`;
+                        return;
+                    }
+                    if (!Array.isArray(data) || data.length === 0) {
+                        modalBody.innerHTML = '<p>No results found for this query.</p>';
+                        return;
+                    }
+                    let html = '<div class="results-list">';
+                    data.forEach((res, idx) => {
+                        html += `
+                            <div class="result-card card">
+                                <div class="card-header">
+                                    <span class="rank">#${idx+1}</span>
+                                    <span class="name"><i class="fas fa-file-pdf"></i> ${escapeHtml(res.file_name)}</span>
+                                    <span class="score"><i class="fas fa-chart-simple"></i> ${escapeHtml(String(res.score))}%</span>
+                                </div>
+                                <div class="summary">${escapeHtml(res.text_preview)}</div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    modalBody.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error(err);
+                    modalBody.innerHTML = `<p>Failed to load results: ${err.message}</p>`;
+                });
+        }
+
+        function closeModal() {
+            document.getElementById('resultsModal').style.display = 'none';
+        }
+
+        // Folder input UI
         const folderInput = document.getElementById('folder_input');
         const fileNameSpan = document.querySelector('.file-input-name');
         const fileInputButton = document.querySelector('.file-input-button');
-
         if (folderInput && fileNameSpan) {
-            folderInput.addEventListener('change', function() {
-                if (this.files && this.files.length) {
-                    fileNameSpan.textContent = `${this.files.length} file(s) selected`;
-                } else {
-                    fileNameSpan.textContent = 'No folder selected';
-                }
+            folderInput.addEventListener('change', () => {
+                fileNameSpan.textContent = folderInput.files.length ? `${folderInput.files.length} file(s) selected` : 'No folder selected';
             });
         }
-
-        // 2. Make the custom button open the folder picker (click fix)
         if (fileInputButton && folderInput) {
-            fileInputButton.addEventListener('click', function(e) {
-                e.preventDefault();
-                folderInput.click();
-            });
+            fileInputButton.addEventListener('click', (e) => { e.preventDefault(); folderInput.click(); });
         }
 
-        // 3. Show loading spinner on form submit
-        const uploadForm = document.getElementById('uploadForm');
-        if (uploadForm) {
-            uploadForm.addEventListener('submit', function() {
-                document.getElementById('loading').style.display = 'flex';
-            });
-        }
+        // Loading spinner on submit
+        document.getElementById('uploadForm').addEventListener('submit', () => {
+            document.getElementById('loading').style.display = 'flex';
+        });
 
-        // 4. Function to load a past query
-        function loadQuery(jobDesc, topK) {
-            document.getElementById('job_description').value = jobDesc;
-            document.getElementById('top_k').value = topK;
-            // Optionally auto-submit: uncomment the next line if desired
-            // document.getElementById('uploadForm').submit();
-        }
-
-        // 5. Handle clicks and keyboard (Enter / Space) on history items
+        // History click and keyboard
         const historyContainer = document.querySelector('.history-section');
         if (historyContainer) {
-            // Click handler
-            historyContainer.addEventListener('click', function(e) {
+            historyContainer.addEventListener('click', (e) => {
                 const item = e.target.closest('.history-item');
-                if (item && item.dataset.jobDesc && item.dataset.topK) {
-                    let jobDesc = JSON.parse(item.dataset.jobDesc);
-                    let topK = parseInt(item.dataset.topK, 10);
-                    loadQuery(jobDesc, topK);
+                if (item && item.dataset.queryId) {
+                    e.preventDefault();
+                    showPastResults(item.dataset.queryId);
                 }
             });
-
-            // Keyboard handler (Enter or Space)
-            historyContainer.addEventListener('keydown', function(e) {
+            historyContainer.addEventListener('keydown', (e) => {
                 const item = e.target.closest('.history-item');
-                if (!item) return;
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();  // Prevent page scroll on Space
-                    if (item.dataset.jobDesc && item.dataset.topK) {
-                        let jobDesc = JSON.parse(item.dataset.jobDesc);
-                        let topK = parseInt(item.dataset.topK, 10);
-                        loadQuery(jobDesc, topK);
-                    }
+                if (item && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    showPastResults(item.dataset.queryId);
                 }
             });
         }
+
+        // Modal close events
+        const modal = document.getElementById('resultsModal');
+        const closeBtn = modal.querySelector('.close-modal');
+        closeBtn.addEventListener('click', closeModal);
+        window.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
     </script>
 </body>
 </html>

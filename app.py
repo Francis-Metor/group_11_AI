@@ -5,7 +5,7 @@ import sqlite3
 import json
 import logging
 from datetime import datetime
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from resume_matcher import load_resumes_from_file_paths, rank_resumes
 
@@ -36,37 +36,50 @@ def init_db():
     logger.info("Database initialized")
 
 def save_query(job_description, top_k, results):
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        c = conn.cursor()
-        c.execute(
-            'INSERT INTO queries (job_description, timestamp, top_k, results_json) VALUES (?, ?, ?, ?)',
-            (job_description, datetime.now().isoformat(), top_k, json.dumps(results))
-        )
-        conn.commit()
-        conn.close()
-        logger.info("Query saved to database")
-    except Exception as e:
-        logger.error(f"Failed to save query: {e}")
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        'INSERT INTO queries (job_description, timestamp, top_k, results_json) VALUES (?, ?, ?, ?)',
+        (job_description, datetime.now().isoformat(), top_k, json.dumps(results))
+    )
+    conn.commit()
+    conn.close()
 
 def get_recent_queries(limit=10):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('SELECT id, job_description, timestamp, top_k, results_json FROM queries ORDER BY timestamp DESC LIMIT ?', (limit,))
+    rows = c.fetchall()
+    conn.close()
+    queries = []
+    for row in rows:
+        queries.append({
+            'id': row[0],
+            'job_description': row[1],
+            'timestamp': row[2],
+            'top_k': row[3],
+            'results': json.loads(row[4])
+        })
+    return queries
+
+# API endpoint for past results
+@app.route('/api/query/<int:query_id>', methods=['GET'])
+def get_query_results(query_id):
     try:
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
-        c.execute('SELECT id, job_description, timestamp, top_k, results_json FROM queries ORDER BY timestamp DESC LIMIT ?', (limit,))
-        rows = c.fetchall()
+        c.execute('SELECT results_json FROM queries WHERE id = ?', (query_id,))
+        row = c.fetchone()
         conn.close()
-        return [{
-            'id': r[0],
-            'job_description': r[1],
-            'timestamp': r[2],
-            'top_k': r[3],
-            'results': json.loads(r[4])
-        } for r in rows]
+        if row:
+            return jsonify(json.loads(row[0]))
+        else:
+            return jsonify({'error': 'Query not found'}), 404
     except Exception as e:
-        logger.error(f"Failed to retrieve queries: {e}")
-        return []
+        logger.exception("API error")
+        return jsonify({'error': str(e)}), 500
 
+# Main page
 @app.route('/', methods=['GET', 'POST'])
 def index():
     error = None
@@ -96,34 +109,24 @@ def index():
                 os.makedirs(temp_dir, exist_ok=True)
                 saved_paths = []
                 try:
-                    # Save each file, preserving relative paths (optional)
                     for file in files:
                         if file.filename:
-                            # Use relative path to avoid collisions? We'll just use basename.
-                            # But if two subfolders have same filename, they overwrite.
-                            # To fix, we could use the full relative path.
                             filename = secure_filename(file.filename)
-                            # If filename contains path separators, secure_filename strips them.
-                            # So we'll just use basename.
                             filepath = os.path.join(temp_dir, filename)
                             file.save(filepath)
                             saved_paths.append(filepath)
-                            logger.info(f"Saved {filename}")
-                    # Process resumes
                     resumes = load_resumes_from_file_paths(saved_paths)
                     if not resumes:
                         error = "No valid resume files found (PDF, DOCX, TXT, JSONL)."
                     else:
                         results = rank_resumes(resumes, job_description, top_k)
                         save_query(job_description, top_k, results)
-                        logger.info(f"Ranking complete, {len(results)} results")
+                        logger.info(f"New search returned {len(results)} results")
                 except Exception as e:
-                    logger.exception("Error processing upload")
+                    logger.exception("Processing error")
                     error = f"Processing error: {str(e)}"
                 finally:
-                    # Cleanup temp directory
                     shutil.rmtree(temp_dir, ignore_errors=True)
-                    logger.info(f"Cleaned up {temp_dir}")
 
     recent = get_recent_queries()
     return render_template('index.html', error=error, results=results,
