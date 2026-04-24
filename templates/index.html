@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Resume Matcher – Smart CV Screening</title>
-    <!-- Google Fonts + Font Awesome (modern icons) -->
+    <!-- Google Fonts + Font Awesome -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -75,7 +75,8 @@
             <h2><i class="fas fa-clock"></i> Recent Queries</h2>
             {% if recent_queries %}
                 {% for q in recent_queries %}
-                <div class="history-item" onclick="loadQuery({{ q.job_description|tojson }}, {{ q.top_k }})">
+                <div class="history-item" tabindex="0" role="button"
+                     data-job-desc="{{ q.job_description|tojson }}" data-top-k="{{ q.top_k }}">
                     <div class="history-date"><i class="far fa-calendar-alt"></i> {{ q.timestamp[:19] }}</div>
                     <div class="history-desc"><i class="fas fa-align-left"></i> {{ q.job_description[:120] }}{% if q.job_description|length > 120 %}...{% endif %}</div>
                     <div class="history-results"><i class="fas fa-chart-line"></i> {{ q.top_k }} results</div>
@@ -88,30 +89,71 @@
     </div>
 
     <script>
-        // Update the file input text (no logic change, just UI enhancement)
+        // 1. Folder input: update displayed file count
         const folderInput = document.getElementById('folder_input');
         const fileNameSpan = document.querySelector('.file-input-name');
+        const fileInputButton = document.querySelector('.file-input-button');
+
         if (folderInput && fileNameSpan) {
-            folderInput.addEventListener('change', function(e) {
+            folderInput.addEventListener('change', function() {
                 if (this.files && this.files.length) {
-                    let totalFiles = this.files.length;
-                    fileNameSpan.textContent = `${totalFiles} file(s) selected`;
+                    fileNameSpan.textContent = `${this.files.length} file(s) selected`;
                 } else {
                     fileNameSpan.textContent = 'No folder selected';
                 }
             });
         }
 
-        // Original logic (unchanged)
-        document.getElementById('uploadForm').addEventListener('submit', function() {
-            document.getElementById('loading').style.display = 'flex';
-        });
+        // 2. Make the custom button open the folder picker (click fix)
+        if (fileInputButton && folderInput) {
+            fileInputButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                folderInput.click();
+            });
+        }
 
+        // 3. Show loading spinner on form submit
+        const uploadForm = document.getElementById('uploadForm');
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', function() {
+                document.getElementById('loading').style.display = 'flex';
+            });
+        }
+
+        // 4. Function to load a past query
         function loadQuery(jobDesc, topK) {
             document.getElementById('job_description').value = jobDesc;
             document.getElementById('top_k').value = topK;
-            // Optionally auto-submit (commented to keep same behaviour)
+            // Optionally auto-submit: uncomment the next line if desired
             // document.getElementById('uploadForm').submit();
+        }
+
+        // 5. Handle clicks and keyboard (Enter / Space) on history items
+        const historyContainer = document.querySelector('.history-section');
+        if (historyContainer) {
+            // Click handler
+            historyContainer.addEventListener('click', function(e) {
+                const item = e.target.closest('.history-item');
+                if (item && item.dataset.jobDesc && item.dataset.topK) {
+                    let jobDesc = JSON.parse(item.dataset.jobDesc);
+                    let topK = parseInt(item.dataset.topK, 10);
+                    loadQuery(jobDesc, topK);
+                }
+            });
+
+            // Keyboard handler (Enter or Space)
+            historyContainer.addEventListener('keydown', function(e) {
+                const item = e.target.closest('.history-item');
+                if (!item) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();  // Prevent page scroll on Space
+                    if (item.dataset.jobDesc && item.dataset.topK) {
+                        let jobDesc = JSON.parse(item.dataset.jobDesc);
+                        let topK = parseInt(item.dataset.topK, 10);
+                        loadQuery(jobDesc, topK);
+                    }
+                }
+            });
         }
     </script>
 </body>
